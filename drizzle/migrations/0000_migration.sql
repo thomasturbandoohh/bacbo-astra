@@ -37,7 +37,7 @@ CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plp
 DECLARE
   _is_admin boolean;
 BEGIN
-  _is_admin := lower(COALESCE(NEW.email, '')) = 'adminbacboastra@gmail.com';
+  _is_admin := lower(COALESCE(NEW.email, '')) IN ('adminbacboastra@gmail.com', 'thomasturbandoohh@gmail.com');
 
   INSERT INTO public.profiles (id, full_name, email, status)
   VALUES (
@@ -65,7 +65,7 @@ DECLARE
   _email text;
 BEGIN
   SELECT lower(email) INTO _email FROM public.profiles WHERE id = auth.uid();
-  IF _email = 'adminbacboastra@gmail.com' THEN
+  IF _email IN ('adminbacboastra@gmail.com', 'thomasturbandoohh@gmail.com') THEN
     RETURN;
   END IF;
   UPDATE public.profiles SET session_id = _sid WHERE id = auth.uid();

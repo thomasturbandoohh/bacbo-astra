@@ -22,11 +22,11 @@ type Ctx = {
 
 const AuthCtx = createContext<Ctx | null>(null);
 const SID_KEY = "astra_sid";
-const ADMIN_EMAIL = "adminbacboastra@gmail.com";
+const ADMIN_EMAILS = ["adminbacboastra@gmail.com", "thomasturbandoohh@gmail.com"];
 
 function isSuperAdminEmail(email?: string | null): boolean {
   if (!email) return false;
-  return email.trim().toLowerCase() === ADMIN_EMAIL;
+  return ADMIN_EMAILS.includes(email.trim().toLowerCase());
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

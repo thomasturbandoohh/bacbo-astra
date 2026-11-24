@@ -6,7 +6,7 @@ import { AuthScreen } from "@/components/astra/AuthScreen";
 import { AdminSetup } from "@/components/astra/AdminSetup";
 import { AdminPanel } from "@/components/astra/AdminPanel";
 
-const ADMIN_EMAIL = "adminbacboastra@gmail.com";
+const ADMIN_EMAILS = ["adminbacboastra@gmail.com", "thomasturbandoohh@gmail.com"];
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -27,7 +27,8 @@ function AdminPage() {
   const { ready, session, isAdmin, refresh } = useAuth();
   const [hasAdmin, setHasAdmin] = useState<boolean | null>(null);
 
-  const isMasterAdmin = session?.user?.email?.toLowerCase().trim() === ADMIN_EMAIL;
+  const userEmail = session?.user?.email?.toLowerCase().trim();
+  const isMasterAdmin = !!userEmail && ADMIN_EMAILS.includes(userEmail);
 
   useEffect(() => {
     void supabase.rpc("admin_exists").then(({ data }) => setHasAdmin(!!data));
