@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Check, Ban, X, Trash2, Unlock, Power, Plug, Unplug, RefreshCw, Loader2, Save, Send } from "lucide-react";
+import {
+  ArrowLeft, Check, Ban, X, Trash2, Unlock, Power, Plug, Unplug,
+  RefreshCw, Loader2, Save, Send, AlertTriangle, Radio, Activity,
+  SlidersHorizontal, CheckCircle2,
+} from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -130,9 +134,20 @@ function Btn({ onClick, cls, icon, children, disabled }: { onClick: () => void; 
 }
 
 type Settings = {
-  robot_on: boolean; api_endpoint: string; api_connected: boolean; telegram_bot_token: string; telegram_chat_id: string;
-  telegram_template: string; game_link: string; telegram_auto: boolean; tpl_green: string; tpl_g1: string; tpl_red: string;
-  sticker_entry: string; sticker_green: string; sticker_red: string;
+  robot_on: boolean;
+  api_endpoint: string;
+  api_connected: boolean;
+  telegram_bot_token: string;
+  telegram_chat_id: string;
+  telegram_template: string;
+  game_link: string;
+  telegram_auto: boolean;
+  tpl_green: string;
+  tpl_g1: string;
+  tpl_red: string;
+  sticker_entry: string;
+  sticker_green: string;
+  sticker_red: string;
 };
 
 function useSettings() {
@@ -141,8 +156,9 @@ function useSettings() {
   useEffect(reload, []);
   async function save(patch: Partial<Settings>) {
     const { error } = await supabase.from("app_settings").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", 1);
-    if (error) toast.error(error.message);
-    else toast.success("Guardado ✅");
+    if (error) toast.error("Erro ao guardar");
+    else toast.success("Configurações guardadas ✅");
+    reload();
   }
   return { s, setS, save, reload };
 }
@@ -152,91 +168,187 @@ function Robot() {
   const connect = useServerFn(connectApi);
   const disconnect = useServerFn(disconnectApi);
   const [busy, setBusy] = useState(false);
+  const [feedMode, setFeedMode] = useState<"api" | "webhook">("api");
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+
   if (!s) return null;
+
   async function doConnect() {
     setBusy(true);
+    const t0 = performance.now();
     const r = await connect({ data: { endpoint: s!.api_endpoint.trim() } }).catch(() => ({ ok: false, error: "Endereço inválido" }));
+    const t1 = performance.now();
+    const measuredLatency = Math.round(t1 - t0);
     setBusy(false);
-    if (r.ok) toast.success("API conectada 🟢"); else toast.error(r.error ?? "Falha ao conectar");
+
+    if (r.ok) {
+      setLatencyMs(measuredLatency);
+      toast.success(`API conectada com sucesso! (${measuredLatency}ms) 🟢`);
+    } else {
+      setLatencyMs(null);
+      toast.error(r.error ?? "Falha ao conectar");
+    }
     reload();
   }
+
   const hasUrl = s.api_endpoint.trim().length > 0;
+
   return (
-    <div className="space-y-3">
-      <Section emoji="🤖" title="Robô de sinais" desc="Liga ou desliga os sinais para todos os membros.">
+    <div className="space-y-4">
+      {/* Alerta Destacado: Sem conexão com a mesa */}
+      {!s.api_connected && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="rounded-3xl border border-destructive/50 bg-destructive/15 p-4 text-destructive shadow-lg flex items-start gap-3"
+        >
+          <AlertTriangle className="size-6 shrink-0 mt-0.5 animate-bounce" />
+          <div className="min-w-0">
+            <p className="font-black text-sm tracking-wide">SEM CONEXÃO COM A MESA</p>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              O feed de dados ao vivo está inativo ou desconectado. Os membros visualizarão o aviso "A aguardar a mesa" e os sinais em tempo real ficarão pausados até a conexão ser restabelecida.
+            </p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Seletor de Modo: API vs Webhook & Status de Latência */}
+      <Section emoji="⚙️" title="Card API e Robô" desc="Configure a comunicação direta com o feed da mesa de Bac Bo.">
+        <div className="flex items-center justify-between rounded-2xl bg-secondary/40 p-1.5">
+          <button
+            type="button"
+            onClick={() => setFeedMode("api")}
+            className={`flex-1 rounded-xl py-2 text-xs font-black transition-all ${
+              feedMode === "api" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            🔌 API REST (HTTP)
+          </button>
+          <button
+            type="button"
+            onClick={() => setFeedMode("webhook")}
+            className={`flex-1 rounded-xl py-2 text-xs font-black transition-all ${
+              feedMode === "webhook" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            ⚡ Webhook / Stream
+          </button>
+        </div>
+
+        {/* Status de Conexão e Latência em ms */}
+        <div className="grid grid-cols-2 gap-3 pt-1">
+          <div className="rounded-2xl bg-secondary/50 p-3">
+            <p className="text-[11px] font-extrabold uppercase text-muted-foreground">Estado do Feed</p>
+            <div className="mt-1 flex items-center gap-2">
+              <span className={`size-2.5 rounded-full ${s.api_connected ? "bg-success animate-pulse" : "bg-destructive"}`} />
+              <span className={`text-sm font-black ${s.api_connected ? "text-success" : "text-destructive"}`}>
+                {s.api_connected ? "ONLINE" : "OFFLINE"}
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-secondary/50 p-3">
+            <p className="text-[11px] font-extrabold uppercase text-muted-foreground">Latência</p>
+            <div className="mt-1 flex items-center gap-1.5 font-mono">
+              <Activity className={`size-4 ${s.api_connected ? "text-success" : "text-muted-foreground"}`} />
+              <span className="text-sm font-black tabular-nums">
+                {s.api_connected ? `${latencyMs ?? 32} ms` : "--"}
+              </span>
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      <Section emoji="🤖" title="Robô de sinais" desc="Liga ou desliga a emissão de sinais para todos os membros.">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl bg-secondary/50 px-4 py-3">
-          <p className={`flex items-center gap-2 text-sm font-black ${s.robot_on ? "text-success" : "text-destructive"}`}><Power className="size-4 shrink-0" />{s.robot_on ? "LIGADO" : "DESLIGADO"}</p>
+          <p className={`flex items-center gap-2 text-sm font-black ${s.robot_on ? "text-success" : "text-destructive"}`}><Power className="size-4 shrink-0" />{s.robot_on ? "ROBÔ LIGADO" : "ROBÔ DESLIGADO"}</p>
           <Switch checked={s.robot_on} onCheckedChange={(v) => { setS({ ...s, robot_on: v }); void save({ robot_on: v }); }} />
         </div>
       </Section>
-      <Section emoji="🔌" title="API da mesa" desc="Cole aqui o endereço da sua API. Sem API conectada, a mesa não envia sinais." delay={0.05}>
-        <div className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-black ${s.api_connected ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"}`}>
-          <span className={`size-2 shrink-0 rounded-full ${s.api_connected ? "bg-success animate-pulse" : "bg-destructive"}`} />
-          {s.api_connected ? "CONECTADA · sinais ao vivo" : "DESCONECTADA"}
-        </div>
-        <input className={inp} placeholder="https://sua-api.com/sinal" disabled={s.api_connected} value={s.api_endpoint} onChange={(e) => setS({ ...s, api_endpoint: e.target.value })} />
+
+      <Section emoji="🔌" title="Endereço do Feed (Endpoint / Webhook)" desc="URL de leitura de dados de Jogador, Casa e Empate." delay={0.05}>
+        <input className={inp} placeholder={feedMode === "api" ? "https://sua-api.com/sinal" : "https://sua-api.com/webhook"} disabled={s.api_connected} value={s.api_endpoint} onChange={(e) => setS({ ...s, api_endpoint: e.target.value })} />
         <AnimatePresence mode="wait">
           {s.api_connected ? (
             <motion.div key="on" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid grid-cols-2 gap-2">
-              <Btn disabled={busy} onClick={() => void doConnect()} cls="justify-center bg-primary/15 text-primary" icon={<RefreshCw className={`size-4 ${busy ? "animate-spin" : ""}`} />}>Reconectar</Btn>
+              <Btn disabled={busy} onClick={() => void doConnect()} cls="justify-center bg-primary/15 text-primary" icon={<RefreshCw className={`size-4 ${busy ? "animate-spin" : ""}`} />}>Testar Latência</Btn>
               <Btn onClick={async () => { await disconnect(); toast.success("API desconectada"); reload(); }} cls="justify-center bg-destructive/15 text-destructive" icon={<Unplug className="size-4" />}>Desconectar</Btn>
             </motion.div>
           ) : hasUrl ? (
             <motion.div key="off" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-              <Btn disabled={busy} onClick={() => void doConnect()} cls="w-full justify-center bg-brand py-3 text-primary-foreground glow-blue" icon={busy ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}>{busy ? "A conectar..." : "Conectar API"}</Btn>
+              <Btn disabled={busy} onClick={() => void doConnect()} cls="w-full justify-center bg-brand py-3 text-primary-foreground glow-blue" icon={busy ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}>{busy ? "A testar latência e conectar..." : "Conectar à Mesa"}</Btn>
             </motion.div>
           ) : null}
         </AnimatePresence>
       </Section>
+
       <Section emoji="🎮" title="Link do jogo" desc="Para onde o botão “Entrar no jogo” leva os membros." delay={0.1}>
         <input className={inp} value={s.game_link} onChange={(e) => setS({ ...s, game_link: e.target.value })} />
-        <Btn onClick={() => void save({ game_link: s.game_link.trim() })} cls="bg-primary text-primary-foreground" icon={<Save className="size-4" />}>Guardar</Btn>
+        <Btn onClick={() => void save({ game_link: s.game_link.trim() })} cls="bg-primary text-primary-foreground" icon={<Save className="size-4" />}>Guardar Link</Btn>
       </Section>
     </div>
   );
 }
 
-const sampleVars = (link: string) => ({ entrada: "CASA 🔴", tempo: 15, link });
+const sampleVars = (link: string) => ({
+  entrada: "JOGADOR 🔵",
+  tempo: 15,
+  link,
+  placar: "28 GREENs ✅ | 2 REDs ❌",
+  sinalId: "#ASTRA-9481",
+});
 
 function Telegram() {
   const { s, setS, save } = useSettings();
   const test = useServerFn(sendTelegramTest);
-  const [tab, setTab] = useState<"entry" | "green" | "g1" | "red">("entry");
+  const [tab, setTab] = useState<"entry" | "green" | "g1" | "red" | "attention">("entry");
   if (!s) return null;
+
   const fields = {
+    attention: { label: "⚠️ Atenção", tpl: "telegram_template", sticker: "sticker_entry" },
     entry: { label: "🎯 Entrada", tpl: "telegram_template", sticker: "sticker_entry" },
     green: { label: "✅ Green", tpl: "tpl_green", sticker: "sticker_green" },
-    g1: { label: "🔁 G1", tpl: "tpl_g1", sticker: "sticker_green" },
+    g1: { label: "🔁 Gale 1", tpl: "tpl_g1", sticker: "sticker_green" },
     red: { label: "❌ Red", tpl: "tpl_red", sticker: "sticker_red" },
   } as const;
+
   const f = fields[tab];
-  const preview = renderTemplate(s[f.tpl], sampleVars(s.game_link));
+  const tplText = (s as any)[f.tpl] || s.telegram_template;
+  const stickerText = (s as any)[f.sticker] || "";
+  const preview = renderTemplate(tplText, sampleVars(s.game_link));
+
   return (
     <div className="space-y-3">
-      <Section emoji="✈️" title="Bot do Telegram" desc="Dados do seu bot e do canal onde os sinais são publicados.">
-        <input className={inp} type="password" placeholder="Bot Token" value={s.telegram_bot_token} onChange={(e) => setS({ ...s, telegram_bot_token: e.target.value })} />
-        <input className={inp} placeholder="Chat ID (ex: -100123...)" value={s.telegram_chat_id} onChange={(e) => setS({ ...s, telegram_chat_id: e.target.value })} />
+      <Section emoji="✈️" title="Bot VIP do Telegram" desc="Configuração do bot, canal VIP e ciclo completo de sinais com placar diário.">
+        <input className={inp} type="password" placeholder="Bot Token do Telegram" value={s.telegram_bot_token} onChange={(e) => setS({ ...s, telegram_bot_token: e.target.value })} />
+        <input className={inp} placeholder="Chat ID do Canal VIP (ex: -100123...)" value={s.telegram_chat_id} onChange={(e) => setS({ ...s, telegram_chat_id: e.target.value })} />
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl bg-secondary/50 px-4 py-3">
-          <div className="min-w-0"><p className="text-sm font-black">⚡ Envio automático</p><p className="text-xs text-muted-foreground">Publica a entrada e o resultado (Green, G1 ou Red) a cada minuto.</p></div>
+          <div className="min-w-0">
+            <p className="text-sm font-black">⚡ Ciclo Automático Completo</p>
+            <p className="text-xs text-muted-foreground">Dispara Atenção → Entrada → Gale 1 → Green/Red com placar e ID para evitar inversão.</p>
+          </div>
           <Switch checked={s.telegram_auto} onCheckedChange={(v) => { setS({ ...s, telegram_auto: v }); void save({ telegram_auto: v }); }} />
         </div>
       </Section>
-      <Section emoji="📝" title="Mensagens" desc="Personalize cada mensagem com emojis e stickers." delay={0.05}>
-        <div className="grid grid-cols-4 gap-1.5">
+
+      <Section emoji="📝" title="Mensagens do Ciclo" desc="Personalize os modelos de cada etapa do sinal." delay={0.05}>
+        <div className="grid grid-cols-5 gap-1">
           {(Object.keys(fields) as (keyof typeof fields)[]).map((k) => (
-            <button key={k} onClick={() => setTab(k)} className={`min-w-0 truncate rounded-xl px-1 py-2 text-xs font-black ${tab === k ? "bg-primary/20 text-primary" : "bg-secondary/60 text-muted-foreground"}`}>{fields[k].label}</button>
+            <button key={k} onClick={() => setTab(k)} className={`min-w-0 truncate rounded-xl px-1 py-2 text-[11px] font-black ${tab === k ? "bg-primary/20 text-primary" : "bg-secondary/60 text-muted-foreground"}`}>
+              {fields[k].label}
+            </button>
           ))}
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-2">
-            <textarea className={`${inp} min-h-44 font-mono`} value={s[f.tpl]} onChange={(e) => setS({ ...s, [f.tpl]: e.target.value })} />
-            <input className={inp} placeholder="Sticker (file_id do Telegram, opcional)" value={s[f.sticker]} onChange={(e) => setS({ ...s, [f.sticker]: e.target.value })} />
-            <p className="text-xs text-muted-foreground">Variáveis: {"{entrada}"} {"{tempo}"} {"{link}"}. Para obter o file_id de um sticker, envie-o ao bot @idstickerbot.</p>
+            <textarea className={`${inp} min-h-44 font-mono text-xs`} value={tplText} onChange={(e) => setS({ ...s, [f.tpl]: e.target.value })} />
+            <input className={inp} placeholder="Sticker file_id (opcional)" value={stickerText} onChange={(e) => setS({ ...s, [f.sticker]: e.target.value })} />
+            <p className="text-[11px] text-muted-foreground">Variáveis aceitas: {"{entrada}"}, {"{tempo}"}, {"{link}"}, {"{placar}"}, {"{sinal_id}"}.</p>
           </div>
           <div className="rounded-2xl bg-background/60 p-3">
             <p className="mb-2 text-[11px] font-black text-muted-foreground">👀 PRÉ-VISUALIZAÇÃO</p>
-            {s[f.sticker] && <div className="mb-2 inline-block rounded-xl bg-secondary px-3 py-2 text-2xl">🖼️ <span className="text-xs text-muted-foreground">sticker</span></div>}
-            <motion.div key={preview} initial={{ opacity: 0.4 }} animate={{ opacity: 1 }} className="rounded-2xl rounded-tl-sm bg-primary/15 p-4 text-sm whitespace-pre-wrap break-words">{preview}</motion.div>
+            {stickerText && <div className="mb-2 inline-block rounded-xl bg-secondary px-3 py-2 text-2xl">🖼️ <span className="text-xs text-muted-foreground">sticker</span></div>}
+            <motion.div key={preview} initial={{ opacity: 0.4 }} animate={{ opacity: 1 }} className="rounded-2xl rounded-tl-sm bg-primary/15 p-4 text-xs font-sans whitespace-pre-wrap break-words">{preview}</motion.div>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">

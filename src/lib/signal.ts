@@ -5,13 +5,19 @@ export const CYCLE_MS = 30_000; // one Bac Bo round
 export const ANALYZE_MS = 15_000; // analysing phase
 export const BET_WINDOW_MS = 15_000; // betting window (~15 s)
 
+export type DiceFace = 1 | 2 | 3 | 4 | 5 | 6;
+
 export interface Signal {
   cycle: number;
   side: Side;
   player: number;
   tie: number;
   banker: number;
+  playerDice?: [DiceFace, DiceFace] | undefined;
+  bankerDice?: [DiceFace, DiceFace] | undefined;
 }
+
+export type Outcome = "GREEN" | "G1" | "RED" | "TIE_GREEN";
 
 export interface HistoryItem {
   cycle: number;
@@ -19,6 +25,10 @@ export interface HistoryItem {
   side: Side;
   win: boolean;
   outcome: Outcome;
+  playerTotal?: number | undefined;
+  bankerTotal?: number | undefined;
+  playerDice?: [DiceFace, DiceFace] | undefined;
+  bankerDice?: [DiceFace, DiceFace] | undefined;
 }
 
 function rand(seed: number): () => number {
@@ -41,7 +51,27 @@ export function phaseAt(now: number): { phase: "analyzing" | "confirmed"; remain
   return { phase: "confirmed", remainingMs: CYCLE_MS - t };
 }
 
-/** Deterministic simulation: every user sees the same signal for a given round. */
+/** Deterministic dice simulation for 4 dice in Bac Bo */
+export function simulateDice(cycle: number): {
+  playerDice: [DiceFace, DiceFace];
+  bankerDice: [DiceFace, DiceFace];
+  playerTotal: number;
+  bankerTotal: number;
+} {
+  const r = rand(cycle * 1337 + 7);
+  r();
+  const d1 = (1 + Math.floor(r() * 6)) as DiceFace;
+  const d2 = (1 + Math.floor(r() * 6)) as DiceFace;
+  const d3 = (1 + Math.floor(r() * 6)) as DiceFace;
+  const d4 = (1 + Math.floor(r() * 6)) as DiceFace;
+  return {
+    playerDice: [d1, d2],
+    bankerDice: [d3, d4],
+    playerTotal: d1 + d2,
+    bankerTotal: d3 + d4,
+  };
+}
+
 export function simulateSignal(cycle: number): Signal {
   const r = rand(cycle * 2654435761);
   r();
@@ -51,13 +81,21 @@ export function simulateSignal(cycle: number): Signal {
   const player = Math.round(rest * playerShare);
   const banker = rest - player;
   const side: Side = player >= banker ? "JOGADOR" : "CASA";
-  return { cycle, side, player, tie, banker };
+  const dice = simulateDice(cycle);
+  return {
+    cycle,
+    side,
+    player,
+    tie,
+    banker,
+    playerDice: dice.playerDice,
+    bankerDice: dice.bankerDice,
+  };
 }
 
 export const HISTORY_LIMIT = 20; // history resets every 20 rounds
-export type Outcome = "GREEN" | "G1" | "RED";
 
-/** Per block of 20 rounds: at most 2 REDs, so the hit rate never drops below 90%. */
+/** Per block of 20 rounds: at most 2 REDs, so the hit rate never drops below 90%. Empate = GREEN */
 export function outcomeAt(cycle: number): Outcome {
   const block = Math.floor(cycle / HISTORY_LIMIT);
   const idx = ((cycle % HISTORY_LIMIT) + HISTORY_LIMIT) % HISTORY_LIMIT;
@@ -74,6 +112,8 @@ export function outcomeAt(cycle: number): Outcome {
   const pos = order.indexOf(idx);
   if (pos < nRed) return "RED";
   if (pos < nRed + nG1) return "G1";
+  // Empate conta como GREEN
+  if (idx % 6 === 0) return "TIE_GREEN";
   return "GREEN";
 }
 
@@ -83,12 +123,18 @@ export function simulateWin(cycle: number): boolean {
 
 function item(c: number): HistoryItem {
   const d = new Date(c * CYCLE_MS + ANALYZE_MS);
+  const outcome = outcomeAt(c);
+  const dice = simulateDice(c);
   return {
     cycle: c,
     time: d.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Luanda" }),
     side: simulateSignal(c).side,
     win: simulateWin(c),
-    outcome: outcomeAt(c),
+    outcome,
+    playerTotal: dice.playerTotal,
+    bankerTotal: dice.bankerTotal,
+    playerDice: dice.playerDice,
+    bankerDice: dice.bankerDice,
   };
 }
 
@@ -100,6 +146,11 @@ export function buildHistory(nowCycle: number): HistoryItem[] {
   return items;
 }
 
+export function winRate(items: HistoryItem[]): number {
+  if (items.length === 0) return 0;
+  return Math.round((items.filter((i) => i.win || i.outcome === "TIE_GREEN").length / items.length) * 1000) / 10;
+}
+
 /** Rate shown: current block, or the previous full block right after a reset. */
 export function displayRate(nowCycle: number, items: HistoryItem[]): number {
   if (items.length > 0) return winRate(items);
@@ -107,14 +158,34 @@ export function displayRate(nowCycle: number, items: HistoryItem[]): number {
   return winRate(Array.from({ length: HISTORY_LIMIT }, (_, i) => item(start + i)));
 }
 
-export function winRate(items: HistoryItem[]): number {
-  if (items.length === 0) return 0;
-  return Math.round((items.filter((i) => i.win).length / items.length) * 1000) / 10;
+/** Daily scoreboard calculations for Telegram and display */
+export function getDailyScore(cycle: number): {
+  greens: number;
+  reds: number;
+  total: number;
+  accuracy: number;
+} {
+  let greens = 0;
+  let reds = 0;
+  const startCycle = Math.max(0, cycle - 40);
+  for (let c = startCycle; c <= cycle; c++) {
+    const o = outcomeAt(c);
+    if (o === "GREEN" || o === "G1" || o === "TIE_GREEN") greens++;
+    else reds++;
+  }
+  const total = greens + reds;
+  const accuracy = total > 0 ? Math.round((greens / total) * 100) : 100;
+  return { greens, reds, total, accuracy };
 }
 
-export function renderTemplate(tpl: string, v: { entrada: string; tempo: number; link: string }): string {
+export function renderTemplate(
+  tpl: string,
+  v: { entrada: string; tempo: number; link: string; placar?: string; sinalId?: string }
+): string {
   return tpl
     .replaceAll("{entrada}", v.entrada)
     .replaceAll("{tempo}", String(v.tempo))
-    .replaceAll("{link}", v.link);
+    .replaceAll("{link}", v.link)
+    .replaceAll("{placar}", v.placar ?? "95% Assertividade")
+    .replaceAll("{sinal_id}", v.sinalId ?? "#ASTRA-VIP");
 }

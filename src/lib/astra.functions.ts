@@ -6,8 +6,9 @@ import { fetchApiSignal, labelSide, loadSettings, tgSend } from "./astra.server"
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  return supabaseAdmin;
+  return supabaseAdmin as any;
 }
+
 async function isAdmin(userId: string) {
   const db = await admin();
   const { data } = await db.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle();
@@ -27,7 +28,15 @@ export const getSignal = createServerFn({ method: "GET" })
     const now = Date.now();
     const cycle = cycleAt(now);
     const history = buildHistory(cycle);
-    const base = { ok: true as const, serverNow: now, gameLink: s?.game_link || "https://www.elephantbet.co.ao/", history, rate: displayRate(cycle, history) };
+    const base = {
+      ok: true as const,
+      serverNow: now,
+      gameLink: s?.game_link || "https://www.elephantbet.co.ao/",
+      history,
+      rate: displayRate(cycle, history),
+      apiConnected: Boolean(s?.api_connected),
+      robotOn: Boolean(s?.robot_on),
+    };
     if (!s?.robot_on) return { ...base, mode: "off" as const };
     if (!s.api_connected || !s.api_endpoint) return { ...base, mode: "waiting" as const };
     const signal = await fetchApiSignal(s.api_endpoint, cycle);
@@ -37,7 +46,7 @@ export const getSignal = createServerFn({ method: "GET" })
 
 export const connectApi = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ endpoint: z.string().trim().url().max(500) }).parse(d))
+  .validator((d: unknown) => z.object({ endpoint: z.string().trim().url().max(500) }).parse(d))
   .handler(async ({ context, data }) => {
     if (!(await isAdmin(context.userId))) return { ok: false, error: "Sem permissão" };
     const sig = await fetchApiSignal(data.endpoint, cycleAt(Date.now()));
@@ -57,7 +66,7 @@ export const disconnectApi = createServerFn({ method: "POST" })
 
 export const deleteUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     if (!(await isAdmin(context.userId))) return { ok: false, error: "Sem permissão" };
     if (data.id === context.userId) return { ok: false, error: "Não pode excluir a sua própria conta." };
@@ -67,7 +76,7 @@ export const deleteUser = createServerFn({ method: "POST" })
   });
 
 export const setupAdmin = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
+  .validator((d: unknown) =>
     z.object({ name: z.string().trim().min(2).max(80), email: z.string().trim().email().max(200), password: z.string().min(8).max(100) }).parse(d),
   )
   .handler(async ({ data }) => {
@@ -88,13 +97,14 @@ export const setupAdmin = createServerFn({ method: "POST" })
 
 export const sendTelegramTest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ kind: z.enum(["entry", "green", "g1", "red"]) }).parse(d))
+  .validator((d: unknown) => z.object({ kind: z.enum(["entry", "green", "g1", "red", "attention"]) }).parse(d))
   .handler(async ({ context, data }) => {
     if (!(await isAdmin(context.userId))) return { ok: false, error: "Sem permissão" };
     const s = await loadSettings(await admin());
     if (!s?.telegram_bot_token || !s.telegram_chat_id) return { ok: false, error: "Preencha o Bot Token e o Chat ID." };
     const v = { entrada: labelSide(simulateSignal(cycleAt(Date.now())).side), tempo: BET_WINDOW_MS / 1000, link: s.game_link };
     const map = {
+      attention: ["⚠️ ATENÇÃO ⚠️\nIdentificando entrada no Bac Bo...\n🔗 {link}", s.sticker_entry],
       entry: [s.telegram_template, s.sticker_entry],
       green: [s.tpl_green, s.sticker_green],
       g1: [s.tpl_g1, s.sticker_green],

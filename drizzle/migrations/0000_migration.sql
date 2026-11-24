@@ -34,17 +34,42 @@ GRANT UPDATE ON public.profiles TO authenticated;
 CREATE POLICY "own roles" ON public.user_roles FOR SELECT TO authenticated USING (user_id = auth.uid());
 
 CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  _is_admin boolean;
 BEGIN
-  INSERT INTO public.profiles (id, full_name, email)
-  VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'full_name',''), COALESCE(NEW.email,''));
-  INSERT INTO public.user_roles (user_id, role) VALUES (NEW.id, 'user');
+  _is_admin := lower(COALESCE(NEW.email, '')) = 'adminbacboastra@gmail.com';
+
+  INSERT INTO public.profiles (id, full_name, email, status)
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', ''),
+    COALESCE(NEW.email, ''),
+    CASE WHEN _is_admin THEN 'aprovado'::public.user_status ELSE 'pendente'::public.user_status END
+  )
+  ON CONFLICT (id) DO UPDATE
+  SET
+    status = CASE WHEN _is_admin THEN 'aprovado'::public.user_status ELSE profiles.status END,
+    email = COALESCE(NEW.email, profiles.email);
+
+  INSERT INTO public.user_roles (user_id, role)
+  VALUES (NEW.id, CASE WHEN _is_admin THEN 'admin'::public.app_role ELSE 'user'::public.app_role END)
+  ON CONFLICT (user_id, role) DO NOTHING;
+
   RETURN NEW;
 END $$;
 CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- Single active session
-CREATE OR REPLACE FUNCTION public.claim_session(_sid text) RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+-- Single active session (admin email has unrestricted multi-device access)
+CREATE OR REPLACE FUNCTION public.claim_session(_sid text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  _email text;
+BEGIN
+  SELECT lower(email) INTO _email FROM public.profiles WHERE id = auth.uid();
+  IF _email = 'adminbacboastra@gmail.com' THEN
+    RETURN;
+  END IF;
   UPDATE public.profiles SET session_id = _sid WHERE id = auth.uid();
+END;
 $$;
 REVOKE EXECUTE ON FUNCTION public.claim_session(text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.claim_session(text) TO authenticated;

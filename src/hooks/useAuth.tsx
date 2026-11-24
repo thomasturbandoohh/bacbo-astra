@@ -3,7 +3,13 @@ import type { Session } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
-export type Profile = { id: string; full_name: string; email: string; status: "pendente" | "aprovado" | "bloqueado" | "recusado"; session_id: string | null };
+export type Profile = {
+  id: string;
+  full_name: string;
+  email: string;
+  status: "pendente" | "aprovado" | "bloqueado" | "recusado";
+  session_id: string | null;
+};
 
 type Ctx = {
   ready: boolean;
@@ -16,6 +22,12 @@ type Ctx = {
 
 const AuthCtx = createContext<Ctx | null>(null);
 const SID_KEY = "astra_sid";
+const ADMIN_EMAIL = "adminbacboastra@gmail.com";
+
+function isSuperAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  return email.trim().toLowerCase() === ADMIN_EMAIL;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -32,8 +44,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     const uid = s.user.id;
-    // Single-device: claim this device's session id once per sign-in.
-    if (claimed.current !== uid) {
+    const isMasterAdmin = isSuperAdminEmail(s.user.email);
+
+    // Single-device logic: Only enforced for regular members.
+    // adminbacboastra@gmail.com has unrestricted multi-device access without termination.
+    if (!isMasterAdmin && claimed.current !== uid) {
       let sid = localStorage.getItem(SID_KEY);
       if (!sid) {
         sid = crypto.randomUUID();
@@ -42,12 +57,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await supabase.rpc("claim_session", { _sid: sid });
       claimed.current = uid;
     }
+
     const [{ data: p }, { data: r }] = await Promise.all([
       supabase.from("profiles").select("id,full_name,email,status,session_id").eq("id", uid).maybeSingle(),
       supabase.from("user_roles").select("role").eq("user_id", uid).eq("role", "admin").maybeSingle(),
     ]);
-    setProfile((p as Profile) ?? null);
-    setIsAdmin(!!r);
+
+    const resolvedAdmin = isMasterAdmin || !!r;
+    const resolvedProfile = (p as Profile) ?? {
+      id: uid,
+      full_name: s.user.user_metadata?.["full_name"] || (isMasterAdmin ? "Administrador" : "Membro"),
+      email: s.user.email || "",
+      status: isMasterAdmin ? "aprovado" : "pendente",
+      session_id: null,
+    };
+
+    // If master admin, guarantee approved status immediately
+    if (isMasterAdmin && resolvedProfile.status !== "aprovado") {
+      resolvedProfile.status = "aprovado";
+    }
+
+    setProfile(resolvedProfile);
+    setIsAdmin(resolvedAdmin);
     setReady(true);
   }, []);
 
@@ -69,22 +100,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, [load]);
 
-  // Poll: kick this device if another one signed in, refresh approval status.
+  // Poll: check device session. For adminbacboastra@gmail.com, multi-device is unrestricted.
   useEffect(() => {
     if (!session) return;
+    const isMasterAdmin = isSuperAdminEmail(session.user.email);
+
     const id = setInterval(async () => {
-      const { data } = await supabase.from("profiles").select("id,full_name,email,status,session_id").eq("id", session.user.id).maybeSingle();
+      const { data } = await supabase
+        .from("profiles")
+        .select("id,full_name,email,status,session_id")
+        .eq("id", session.user.id)
+        .maybeSingle();
+
       if (!data) return;
-      const local = localStorage.getItem(SID_KEY);
-      if (data.session_id && local && data.session_id !== local) {
-        toast.error("A sua conta foi aberta noutro dispositivo. Sessão terminada.");
-        await signOut();
-        return;
+
+      // Regular members: kick this device if another one signed in
+      if (!isMasterAdmin && !isAdmin) {
+        const local = localStorage.getItem(SID_KEY);
+        if (data.session_id && local && data.session_id !== local) {
+          toast.error("A sua conta foi aberta noutro dispositivo. Sessão terminada.");
+          await signOut();
+          return;
+        }
       }
-      setProfile(data as Profile);
+
+      setProfile((prev) => {
+        const prof = (data as Profile) ?? prev;
+        if (isMasterAdmin) prof.status = "aprovado";
+        return prof;
+      });
     }, 8000);
+
     return () => clearInterval(id);
-  }, [session, signOut]);
+  }, [session, isAdmin, signOut]);
 
   const refresh = useCallback(() => load(session), [load, session]);
 

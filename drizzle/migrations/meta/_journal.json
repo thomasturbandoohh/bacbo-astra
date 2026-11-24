@@ -15,6 +15,13 @@
       "when": 1795549131754,
       "tag": "0001_real_mode_telegram_auto",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795551000000,
+      "tag": "0002_admin_auto_approval",
+      "breakpoints": true
     }
   ]
 }
