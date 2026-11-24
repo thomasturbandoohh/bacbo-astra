@@ -1,23 +1,27 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useAuth } from "@/hooks/useAuth";
+import { AuthScreen } from "@/components/astra/AuthScreen";
+import { StatusScreen } from "@/components/astra/StatusScreen";
+import { Dashboard } from "@/components/astra/Dashboard";
 
-// The home route ships no og:image, so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "BAC BO ASTRA — Sinais em tempo real" },
+      { name: "description", content: "Sinais de Bac Bo ao vivo com radar em tempo real e histórico de assertividade." },
+      { property: "og:title", content: "BAC BO ASTRA" },
+      { property: "og:description", content: "Sinais de Bac Bo ao vivo com radar em tempo real." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
+  const { ready, session, profile, isAdmin } = useAuth();
+  if (!ready) return <div className="flex min-h-screen items-center justify-center text-sm font-bold text-muted-foreground">A carregar...</div>;
+  if (!session) return <AuthScreen />;
+  if (!isAdmin && profile?.status !== "aprovado") return <StatusScreen />;
+  return <Dashboard />;
 }

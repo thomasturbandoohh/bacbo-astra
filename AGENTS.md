@@ -28,3 +28,10 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+- Signals are computed in `src/lib/signal.ts` deterministically per 30 s round so every user sees the same entry; the `getSignal` server fn swaps in the admin-configured API when set. Why: no shared state/cron needed.
+- Single-device login: each device stores a random id in localStorage and claims it via `claim_session` RPC; clients poll and sign out on mismatch. Why: last login wins without server sessions.
+- First admin is created by `setupAdmin` only while `admin_exists()` is false. Why: admin password is set at first access.
+- Roles live in `user_roles` checked with `has_role`; approval status in `profiles.status`, only admins may update it.
+- Never use purple or gold; gradients stay within blue hues (blue+red blends read as purple).
