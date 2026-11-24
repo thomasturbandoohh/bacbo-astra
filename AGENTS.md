@@ -30,7 +30,10 @@ use the editor.
 <!-- LOVABLE:END -->
 
 ## Project rules
-- Signals are computed in `src/lib/signal.ts` deterministically per 30 s round so every user sees the same entry; the `getSignal` server fn swaps in the admin-configured API when set. Why: no shared state/cron needed.
+- Real mode: live entries come only from the admin-connected API (`app_settings.api_connected`); without it the dashboard shows "a aguardar a mesa". Why: user wants no demo signals.
+- History/outcomes are deterministic per block of 20 rounds (`outcomeAt`, ≤2 RED per block) and reset each block. Why: user requires ≥90% hit rate and a 20-item history.
+- Telegram auto-posting runs from `/api/public/telegram/tick`, hit every minute by a managed schedule; it posts the last entry's result then a new entry. Why: rounds are server-time based, no worker state.
+- The 3D robot (`Robot3D.tsx`) is lazy-loaded after mount. Why: three.js can't render during SSR.
 - Single-device login: each device stores a random id in localStorage and claims it via `claim_session` RPC; clients poll and sign out on mismatch. Why: last login wins without server sessions.
 - First admin is created by `setupAdmin` only while `admin_exists()` is false. Why: admin password is set at first access.
 - Roles live in `user_roles` checked with `has_role`; approval status in `profiles.status`, only admins may update it.

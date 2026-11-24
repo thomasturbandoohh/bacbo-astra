@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { phaseAt, simulateSignal, winRate, renderTemplate, CYCLE_MS } from "@/lib/signal";
+import { phaseAt, simulateSignal, winRate, renderTemplate, buildHistory, displayRate, outcomeAt, CYCLE_MS } from "@/lib/signal";
 
 describe("signal cycle", () => {
   it("betting window lasts 15 seconds after analysis", () => {
@@ -16,9 +16,20 @@ describe("signal cycle", () => {
     }
   });
   it("win rate", () => {
-    expect(winRate([{ cycle: 1, time: "", side: "CASA", win: true }, { cycle: 2, time: "", side: "CASA", win: false }])).toBe(50);
+    expect(winRate([{ cycle: 1, time: "", side: "CASA", win: true, outcome: "GREEN" }, { cycle: 2, time: "", side: "CASA", win: false, outcome: "RED" }])).toBe(50);
   });
   it("template", () => {
     expect(renderTemplate("{entrada} {tempo} {link}", { entrada: "CASA", tempo: 15, link: "x" })).toBe("CASA 15 x");
+  });
+  it("every block of 20 rounds has at least 90% hits", () => {
+    for (let b = 0; b < 500; b++) {
+      const reds = Array.from({ length: 20 }, (_, i) => outcomeAt(b * 20 + i)).filter((o) => o === "RED").length;
+      expect(reds).toBeLessThanOrEqual(2);
+    }
+  });
+  it("history holds at most 20 rounds and resets", () => {
+    expect(buildHistory(40 * 20 + 19)).toHaveLength(19);
+    expect(buildHistory(40 * 20)).toHaveLength(0);
+    expect(displayRate(40 * 20, [])).toBeGreaterThanOrEqual(90);
   });
 });

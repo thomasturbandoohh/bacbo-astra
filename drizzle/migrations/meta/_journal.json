@@ -8,6 +8,13 @@
       "when": 1795547485519,
       "tag": "0000_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795549131754,
+      "tag": "0001_real_mode_telegram_auto",
+      "breakpoints": true
     }
   ]
 }

@@ -29,7 +29,7 @@ export function Bell() {
         }
       }}
     >
-      <PopoverTrigger aria-label="Notificações" className="relative flex size-10 items-center justify-center rounded-xl border border-border bg-card">
+      <PopoverTrigger aria-label="Notificações" className="relative flex size-10 items-center justify-center glass rounded-2xl">
         <BellIcon className="size-4" />
         {unread > 0 && <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-destructive text-[10px] font-black text-destructive-foreground">{unread}</span>}
       </PopoverTrigger>

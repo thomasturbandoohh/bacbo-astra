@@ -37,36 +37,63 @@ export type Database = {
       }
       app_settings: {
         Row: {
+          api_connected: boolean
           api_endpoint: string
           api_key: string
           game_link: string
           id: number
+          last_sent_cycle: number | null
           robot_on: boolean
+          sticker_entry: string
+          sticker_green: string
+          sticker_red: string
+          telegram_auto: boolean
           telegram_bot_token: string
           telegram_chat_id: string
           telegram_template: string
+          tpl_g1: string
+          tpl_green: string
+          tpl_red: string
           updated_at: string
         }
         Insert: {
+          api_connected?: boolean
           api_endpoint?: string
           api_key?: string
           game_link?: string
           id?: number
+          last_sent_cycle?: number | null
           robot_on?: boolean
+          sticker_entry?: string
+          sticker_green?: string
+          sticker_red?: string
+          telegram_auto?: boolean
           telegram_bot_token?: string
           telegram_chat_id?: string
           telegram_template?: string
+          tpl_g1?: string
+          tpl_green?: string
+          tpl_red?: string
           updated_at?: string
         }
         Update: {
+          api_connected?: boolean
           api_endpoint?: string
           api_key?: string
           game_link?: string
           id?: number
+          last_sent_cycle?: number | null
           robot_on?: boolean
+          sticker_entry?: string
+          sticker_green?: string
+          sticker_red?: string
+          telegram_auto?: boolean
           telegram_bot_token?: string
           telegram_chat_id?: string
           telegram_template?: string
+          tpl_g1?: string
+          tpl_green?: string
+          tpl_red?: string
           updated_at?: string
         }
         Relationships: []

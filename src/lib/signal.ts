@@ -18,6 +18,7 @@ export interface HistoryItem {
   time: string;
   side: Side;
   win: boolean;
+  outcome: Outcome;
 }
 
 function rand(seed: number): () => number {
@@ -53,25 +54,57 @@ export function simulateSignal(cycle: number): Signal {
   return { cycle, side, player, tie, banker };
 }
 
-/** Result of a past round: ~93% win rate. */
-export function simulateWin(cycle: number): boolean {
-  const r = rand(cycle * 40503 + 7);
+export const HISTORY_LIMIT = 20; // history resets every 20 rounds
+export type Outcome = "GREEN" | "G1" | "RED";
+
+/** Per block of 20 rounds: at most 2 REDs, so the hit rate never drops below 90%. */
+export function outcomeAt(cycle: number): Outcome {
+  const block = Math.floor(cycle / HISTORY_LIMIT);
+  const idx = ((cycle % HISTORY_LIMIT) + HISTORY_LIMIT) % HISTORY_LIMIT;
+  const r = rand(block * 7919 + 3);
   r();
-  return r() < 0.93;
+  const order = Array.from({ length: HISTORY_LIMIT }, (_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1));
+    const a = order[i]!, b = order[j]!;
+    order[i] = b; order[j] = a;
+  }
+  const nRed = Math.floor(r() * 3); // 0–2
+  const nG1 = 1 + Math.floor(r() * 3); // 1–3
+  const pos = order.indexOf(idx);
+  if (pos < nRed) return "RED";
+  if (pos < nRed + nG1) return "G1";
+  return "GREEN";
 }
 
-export function buildHistory(nowCycle: number, count = 15): HistoryItem[] {
+export function simulateWin(cycle: number): boolean {
+  return outcomeAt(cycle) !== "RED";
+}
+
+function item(c: number): HistoryItem {
+  const d = new Date(c * CYCLE_MS + ANALYZE_MS);
+  return {
+    cycle: c,
+    time: d.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Luanda" }),
+    side: simulateSignal(c).side,
+    win: simulateWin(c),
+    outcome: outcomeAt(c),
+  };
+}
+
+/** Rounds of the current block of 20 (newest first); resets when the block fills. */
+export function buildHistory(nowCycle: number): HistoryItem[] {
+  const start = Math.floor(nowCycle / HISTORY_LIMIT) * HISTORY_LIMIT;
   const items: HistoryItem[] = [];
-  for (let c = nowCycle - 1; c > nowCycle - 1 - count; c--) {
-    const d = new Date(c * CYCLE_MS + ANALYZE_MS);
-    items.push({
-      cycle: c,
-      time: d.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Luanda" }),
-      side: simulateSignal(c).side,
-      win: simulateWin(c),
-    });
-  }
+  for (let c = nowCycle - 1; c >= start; c--) items.push(item(c));
   return items;
+}
+
+/** Rate shown: current block, or the previous full block right after a reset. */
+export function displayRate(nowCycle: number, items: HistoryItem[]): number {
+  if (items.length > 0) return winRate(items);
+  const start = Math.floor(nowCycle / HISTORY_LIMIT) * HISTORY_LIMIT - HISTORY_LIMIT;
+  return winRate(Array.from({ length: HISTORY_LIMIT }, (_, i) => item(start + i)));
 }
 
 export function winRate(items: HistoryItem[]): number {
